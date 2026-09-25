@@ -12,6 +12,7 @@ repository.workspace = true
 [features]
 default = ["donation-messages"]
 donation-messages = []
+tpm = ["himmelblau_unix_common/tpm"]
 
 [[bin]]
 name = "aad-tool"

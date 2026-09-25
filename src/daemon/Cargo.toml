@@ -24,6 +24,7 @@ path = "src/tasks_daemon.rs"
 
 [features]
 console = ["dep:console-subscriber"]
+tpm = ["himmelblau_unix_common/tpm"]
 
 [dependencies]
 himmelblau_unix_common = { workspace = true }

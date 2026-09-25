@@ -336,6 +336,7 @@ rec {
         ];
         features = {
           "default" = [ "donation-messages" ];
+          "tpm" = [ "himmelblau_unix_common/tpm" ];
         };
         resolvedDefaultFeatures = [ "default" "donation-messages" ];
       };
@@ -7997,6 +7998,7 @@ rec {
         ];
         features = {
           "console" = [ "dep:console-subscriber" ];
+          "tpm" = [ "himmelblau_unix_common/tpm" ];
         };
         resolvedDefaultFeatures = [ "console" ];
       };

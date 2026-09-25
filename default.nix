@@ -21,6 +21,23 @@ let
       pkgs:
       pkgs.buildRustCrate.override {
         defaultCrateOverrides = pkgs.defaultCrateOverrides // {
+          tss-esapi = attrs: {
+            DEP_TSS2_ESYS_VERSION = pkgs.tpm2-tss.version;
+          };
+          tss-esapi-sys = attrs: {
+            nativeBuildInputs = (attrs.nativeBuildInputs or [ ]) ++ [
+              pkgs.pkg-config
+              pkgs.llvmPackages.libclang
+            ];
+            buildInputs = (attrs.buildInputs or [ ]) ++ [
+              pkgs.tpm2-tss
+            ];
+            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+            BINDGEN_EXTRA_CLANG_ARGS = pkgs.lib.concatStringsSep " " [
+              "-isystem ${pkgs.llvmPackages.libclang.lib}/lib/clang/${pkgs.llvmPackages.libclang.version}/include"
+              "-isystem ${pkgs.glibc.dev}/include"
+            ];
+          };
           idmap =
             attrs:
             unistring
@@ -201,8 +218,8 @@ rec {
   };
 
   packages = {
-    daemon = cargo_nix.workspaceMembers."himmelblaud".build;
-    aad-tool = cargo_nix.workspaceMembers."aad-tool".build;
+    daemon = cargo_nix.workspaceMembers."himmelblaud".build.override { features = [ "console" "tpm" ]; };
+    aad-tool = cargo_nix.workspaceMembers."aad-tool".build.override { features = [ "default" "tpm" ]; };
     sso = cargo_nix.workspaceMembers."sso".build;
     broker = cargo_nix.workspaceMembers."broker".build;
     o365 = cargo_nix.workspaceMembers."o365".build;
