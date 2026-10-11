@@ -40,6 +40,12 @@ Your support helps keep cloud identity for Linux open and available to everyone.
 
 ## Installing
 
+Password-hashing calibration is deferred until a cached password verifier is
+created or updated, then reused for that database instance. Opening the database
+and verifying existing password hashes do not run calibration. The first
+password-cache update after a daemon restart can therefore take longer; the
+hashing algorithm and its 250ms calibration target are unchanged.
+
 Himmelblau is available for multiple Linux distributions, including openSUSE, SUSE Linux Enterprise (SLE), Fedora, Ubuntu, Debian, Red Hat Enterprise Linux (Rocky), and NixOS. Visit the [Himmelblau Downloads Page](https://himmelblau-idm.org/downloads.html) to fetch the appropriate packages for your distribution.
 
 ### openSUSE Tumbleweed

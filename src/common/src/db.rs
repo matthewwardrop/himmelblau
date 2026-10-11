@@ -11,6 +11,7 @@
 use std::convert::TryFrom;
 use std::fmt;
 use std::path::Path;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::idprovider::interface::{GroupToken, Id, UserToken};
@@ -135,13 +136,13 @@ pub trait KeyStoreTxn {
 
 pub struct Db {
     conn: Mutex<Connection>,
-    crypto_policy: CryptoPolicy,
+    crypto_policy: OnceLock<CryptoPolicy>,
 }
 
 pub struct DbTxn<'a> {
     conn: MutexGuard<'a, Connection>,
     committed: bool,
-    crypto_policy: &'a CryptoPolicy,
+    crypto_policy: &'a OnceLock<CryptoPolicy>,
 }
 
 #[derive(Debug)]
@@ -153,15 +154,9 @@ pub enum DbError {
 
 impl Db {
     fn from_connection(conn: Connection) -> Self {
-        // We only build a single thread. If we need more than one, we'll
-        // need to re-do this to account for path = "" for debug.
-        let crypto_policy = CryptoPolicy::time_target(Duration::from_millis(250));
-
-        trace!("Configured {:?}", crypto_policy);
-
         Db {
             conn: Mutex::new(conn),
-            crypto_policy,
+            crypto_policy: OnceLock::new(),
         }
     }
 
@@ -229,7 +224,7 @@ impl fmt::Debug for Db {
 }
 
 impl<'a> DbTxn<'a> {
-    fn new(conn: MutexGuard<'a, Connection>, crypto_policy: &'a CryptoPolicy) -> Self {
+    fn new(conn: MutexGuard<'a, Connection>, crypto_policy: &'a OnceLock<CryptoPolicy>) -> Self {
         // Start the transaction
         // trace!("Starting db WR txn ...");
         #[allow(clippy::expect_used)]
@@ -890,7 +885,13 @@ impl<'a> CacheTxn for DbTxn<'a> {
     ) -> Result<(), CacheError> {
         let tpm_ctx: &mut dyn TpmHmacS256 = &mut **tpm;
 
-        let pw = Password::new_argon2id_hsm(self.crypto_policy, cred, tpm_ctx, hmac_key).map_err(
+        // Existing hashes carry their own parameters; only new hashes need calibration.
+        let crypto_policy = self.crypto_policy.get_or_init(|| {
+            let policy = CryptoPolicy::time_target(Duration::from_millis(250));
+            trace!("Configured {:?}", policy);
+            policy
+        });
+        let pw = Password::new_argon2id_hsm(crypto_policy, cred, tpm_ctx, hmac_key).map_err(
             |e| {
                 error!("password error -> {:?}", e);
                 CacheError::Cryptography
@@ -1135,6 +1136,29 @@ mod tests {
 
     const TESTACCOUNT1_PASSWORD_A: &str = "password a for account1 test";
     const TESTACCOUNT1_PASSWORD_B: &str = "password b for account1 test";
+
+    #[tokio::test]
+    async fn opening_and_migrating_database_does_not_calibrate_password_hashing() {
+        let db = Db::new("").expect("failed to create database");
+        assert!(db.crypto_policy.get().is_none());
+        let mut txn = db.write().await;
+        txn.migrate().unwrap();
+        txn.commit().unwrap();
+        assert!(db.crypto_policy.get().is_none());
+    }
+
+    #[test]
+    fn opening_read_only_database_does_not_calibrate_password_hashing() {
+        let path = std::env::temp_dir().join(format!("himmelblau-db-{}", uuid::Uuid::new_v4()));
+        {
+            let db = Db::new(path.to_str().unwrap()).unwrap();
+            assert!(db.crypto_policy.get().is_none());
+        }
+        let db = Db::open_read_only(path.to_str().unwrap()).unwrap().unwrap();
+        assert!(db.crypto_policy.get().is_none());
+        drop(db);
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[cfg(feature = "tpm")]
     fn setup_tpm() -> BoxedDynTpm {
@@ -1435,7 +1459,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_db_account_password() {
-        let db = Db::new("").expect("failed to create.");
+        let mut db = Db::new("").expect("failed to create.");
 
         let mut dbtxn = db.write().await;
         assert!(dbtxn.migrate().is_ok());
@@ -1480,10 +1504,12 @@ mod tests {
             dbtxn.check_account_password(uuid1, TESTACCOUNT1_PASSWORD_A, &mut hsm, &hmac_key),
             Ok(false)
         ));
+        assert!(dbtxn.crypto_policy.get().is_none());
         // update the pw
         assert!(dbtxn
             .update_account_password(uuid1, TESTACCOUNT1_PASSWORD_A, &mut hsm, &hmac_key)
             .is_ok());
+        let calibrated_policy = dbtxn.crypto_policy.get().unwrap() as *const _;
         // Check it now works.
         assert!(matches!(
             dbtxn.check_account_password(uuid1, TESTACCOUNT1_PASSWORD_A, &mut hsm, &hmac_key),
@@ -1497,6 +1523,10 @@ mod tests {
         assert!(dbtxn
             .update_account_password(uuid1, TESTACCOUNT1_PASSWORD_B, &mut hsm, &hmac_key)
             .is_ok());
+        assert_eq!(
+            dbtxn.crypto_policy.get().unwrap() as *const _,
+            calibrated_policy
+        );
         // Check it matches.
         assert!(matches!(
             dbtxn.check_account_password(uuid1, TESTACCOUNT1_PASSWORD_A, &mut hsm, &hmac_key),
@@ -1516,6 +1546,20 @@ mod tests {
         ));
 
         assert!(dbtxn.commit().is_ok());
+
+        // Simulate a freshly opened database's uninitialized policy.
+        db.crypto_policy.take();
+        let mut dbtxn = db.write().await;
+        assert!(matches!(
+            dbtxn.check_account_password(uuid1, TESTACCOUNT1_PASSWORD_B, &mut hsm, &hmac_key),
+            Ok(true)
+        ));
+        assert!(matches!(
+            dbtxn.check_account_password(uuid1, TESTACCOUNT1_PASSWORD_A, &mut hsm, &hmac_key),
+            Ok(false)
+        ));
+        assert!(dbtxn.crypto_policy.get().is_none());
+        dbtxn.commit().unwrap();
     }
 
     #[tokio::test]
