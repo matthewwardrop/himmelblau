@@ -33,6 +33,10 @@ in
 {
   version = cfg.systemd.package.version;
   nscdEnabled = cfg.services.nscd.enable;
+  daemonUser = {
+    inherit (cfg.users.users.himmelblaud) isSystemUser group;
+  };
+  daemonGroupExists = cfg.users.groups ? himmelblaud;
   tmpfilesRules = cfg.systemd.tmpfiles.rules;
   warnings = cfg.warnings;
   assertions = map (assertion: assertion.message) (

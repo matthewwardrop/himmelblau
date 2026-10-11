@@ -29,6 +29,8 @@ Known deviations from the generated units and their rationale:
   initializer, following the dependency pattern used by NixOS's tpm2-abrmd
   service to handle TPM udev-rule changes during rebuild activation.
 - Keep NixOS's nscd/nsncd NSS proxy running; do not add Conflicts=nscd.service.
+  Create a static himmelblaud user/group so systemd skips dynamic allocation
+  probes through the proxy. Retain DynamicUser=yes for its sandboxing settings.
 - Keep the daemon's Type=notify because it does not implement notify-reload.
 - Retain the tasks service's BindsTo dependency instead of Requires, while
   ordering it after the daemon.
@@ -173,6 +175,16 @@ class NixosServiceTests(unittest.TestCase):
                 "FileDescriptorStorePreserve",
                 "LoadCredentialEncrypted",
             ],
+        )
+
+    def test_static_daemon_identity_retains_dynamic_user_sandboxing(self):
+        self.assertEqual(
+            self.evaluated["daemonUser"],
+            {"isSystemUser": True, "group": "himmelblaud"},
+        )
+        self.assertTrue(self.evaluated["daemonGroupExists"])
+        self.assertEqual(
+            self.units["himmelblaud.service"]["Service"]["DynamicUser"], "yes"
         )
 
     def test_hardening_matches_for_both_daemons(self):

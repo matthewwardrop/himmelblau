@@ -144,6 +144,14 @@ in
   config = lib.mkIf cfg.enable {
     security.tpm2.enable = lib.mkDefault mayUseLocalTpmDevice;
 
+    # Static identities avoid DynamicUser allocation probes through nsncd.
+    # Keep DynamicUser enabled on the unit for its sandboxing protections.
+    users.groups.himmelblaud = { };
+    users.users.himmelblaud = {
+      isSystemUser = true;
+      group = "himmelblaud";
+    };
+
     assertions = [
       {
         assertion = !(
