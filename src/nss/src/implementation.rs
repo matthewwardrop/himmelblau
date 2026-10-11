@@ -12,6 +12,7 @@ use himmelblau_unix_common::config::HimmelblauConfig;
 use himmelblau_unix_common::constants::{DEFAULT_CONFIG_PATH, NSS_CACHE};
 use himmelblau_unix_common::idprovider::interface::Id;
 use himmelblau_unix_common::nss_cache::{Mode, NssCache};
+use himmelblau_unix_common::reserved_ids::is_systemd_dynamic_id;
 use himmelblau_unix_common::unix_passwd::parse_etc_group;
 use himmelblau_unix_common::unix_proto::{ClientRequest, ClientResponse, NssGroup, NssUser};
 use himmelblau_unix_common::user_map::UserMap;
@@ -167,6 +168,10 @@ impl PasswdHooks for HimmelblauPasswd {
     }
 
     fn get_entry_by_uid(uid: libc::uid_t) -> Response<Passwd> {
+        // DynamicUser allocation checks numeric IDs through NSS proxies too.
+        if is_systemd_dynamic_id(uid) {
+            return Response::NotFound;
+        }
         if should_skip_daemon_call() {
             return Response::Unavail;
         }
@@ -334,6 +339,9 @@ impl GroupHooks for HimmelblauGroup {
     }
 
     fn get_entry_by_gid(gid: libc::gid_t) -> Response<Group> {
+        if is_systemd_dynamic_id(gid) {
+            return Response::NotFound;
+        }
         if should_skip_daemon_call() {
             return Response::Unavail;
         }
@@ -937,7 +945,22 @@ impl ShadowHooks for HimmelblauShadow {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use himmelblau_unix_common::reserved_ids::{SYSTEMD_DYNAMIC_ID_MAX, SYSTEMD_DYNAMIC_ID_MIN};
     use std::fs;
+
+    #[test]
+    fn dynamic_ids_return_not_found_without_daemon_access() {
+        for id in SYSTEMD_DYNAMIC_ID_MIN..=SYSTEMD_DYNAMIC_ID_MAX {
+            assert!(matches!(
+                HimmelblauPasswd::get_entry_by_uid(id),
+                Response::NotFound
+            ));
+            assert!(matches!(
+                HimmelblauGroup::get_entry_by_gid(id),
+                Response::NotFound
+            ));
+        }
+    }
 
     unsafe fn collect_groups(groups: *mut libc::gid_t, len: libc::c_long) -> Vec<libc::gid_t> {
         (0..len).map(|idx| *groups.offset(idx as isize)).collect()

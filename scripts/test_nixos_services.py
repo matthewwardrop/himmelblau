@@ -29,6 +29,11 @@ Known deviations from the generated units and their rationale:
   initializer, following the dependency pattern used by NixOS's tpm2-abrmd
   service to handle TPM udev-rule changes during rebuild activation.
 - Keep NixOS's nscd/nsncd NSS proxy running; do not add Conflicts=nscd.service.
+  NSS excludes the exact himmelblaud service name from directory mapping and
+  rejects numeric lookups in systemd's reserved dynamic UID/GID range before
+  configuration/cache access or daemon calls. DynamicUser allocation probes
+  both names and numeric IDs before the daemon starts.
+  The executor-context bypass alone cannot protect calls proxied through nsncd.
 - Keep the daemon's Type=notify because it does not implement notify-reload.
 - Retain the tasks service's BindsTo dependency instead of Requires, while
   ordering it after the daemon.

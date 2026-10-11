@@ -2227,6 +2227,7 @@ mod tests {
         .unwrap();
         let passwd = create_temp_passwd(PASSWD_MINIMAL);
         for name in [
+            "himmelblaud",
             "gdm",
             "sssd",
             "systemd-coredump",
@@ -2259,6 +2260,14 @@ mod tests {
         assert_eq!(
             config.map_name_to_upn_impl("gdmitrij.popov", &passwd),
             Some("gdmitrij.popov@example.com".to_string())
+        );
+        assert_eq!(
+            config.map_name_to_upn_impl("himmelblaud-admin", &passwd),
+            Some("himmelblaud-admin@example.com".to_string())
+        );
+        assert_eq!(
+            config.map_name_to_upn_impl("himmelblaud@example.com", &passwd),
+            Some("himmelblaud@example.com".to_string())
         );
     }
 
